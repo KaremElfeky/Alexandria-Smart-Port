@@ -50,9 +50,16 @@ GITHUB_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRAN
 # DATABASE
 DB_URL = "postgresql://neondb_owner:npg_rGV1neuthUa0@ep-orange-pine-ahlf4955-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
-# MAP CENTER (Alexandria)
-LAT_CENTER = 31.185 
-LON_CENTER = 29.870
+# --- MAP CALIBRATION (CRITICAL FOR ALIGNMENT) ---
+# These match the exact bounds from your model.py
+LAT_NORTH = 31.202
+LAT_SOUTH = 31.168
+LON_WEST  = 29.855
+LON_EAST  = 29.885
+
+# Calculate exact center of the SAR Image
+LAT_CENTER = (LAT_NORTH + LAT_SOUTH) / 2
+LON_CENTER = (LON_WEST + LON_EAST) / 2
 
 # ==========================================
 # 3. DATABASE FUNCTIONS
@@ -100,7 +107,7 @@ with c2:
 tab1, tab2, tab3 = st.tabs(["🗺️ MAP", "📷 SAT FEED", "📊 DATA"])
 
 # ==========================================
-# 5. TAB 1: LIVE MAP
+# 5. TAB 1: LIVE MAP (Perfectly Aligned)
 # ==========================================
 with tab1:
     st.markdown("### 🛰️ Tactical Situation")
@@ -119,34 +126,38 @@ with tab1:
 
     layers = []
     
+    # GREEN LAYER (Legal)
     if not df_legal.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
             data=df_legal,
             get_position="[lon, lat]",
             get_color="[0, 255, 0, 200]",
-            get_radius=150,
+            get_radius=120,          # Slightly smaller dots for precision
             pickable=True,
-            radius_min_pixels=5
+            radius_min_pixels=4
         ))
 
+    # RED LAYER (Detected)
     if not df_detected.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
             data=df_detected,
             get_position="[lon, lat]",
             get_color="[255, 0, 0, 200]", 
-            get_radius=150,
+            get_radius=120,          # Slightly smaller dots for precision
             pickable=True,
-            radius_min_pixels=5
+            radius_min_pixels=4
         ))
 
+    # RENDER MAP
+    # Zoom 13.5 matches the scale of a typical port view
     st.pydeck_chart(pdk.Deck(
         map_style="mapbox://styles/mapbox/dark-v10",
         initial_view_state=pdk.ViewState(
             latitude=LAT_CENTER,
             longitude=LON_CENTER,
-            zoom=13,
+            zoom=13.5,  
             pitch=0
         ),
         layers=layers,
