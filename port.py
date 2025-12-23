@@ -35,24 +35,22 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONFIGURATION (CRITICAL UPDATES)
+# 2. CONFIGURATION
 # ==========================================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGE_FILENAME = 'final_detection.jpg'
 IMAGE_PATH = os.path.join(SCRIPT_DIR, IMAGE_FILENAME)
 
-# --- ☁️ GITHUB FALLBACK SETTINGS ---
-# Replace these with your actual details to make the cloud image work!
-GITHUB_USER = "YourUsername"  # e.g., 'karem-alex-port'
-REPO_NAME = "YourRepoName"    # e.g., 'alexandria-smart-port'
-BRANCH = "main"               # Usually 'main' or 'master'
+# --- ☁️ GITHUB SETTINGS (Fill these in!) ---
+GITHUB_USER = "YourUsername"  # Replace with your GitHub Username
+REPO_NAME = "YourRepoName"    # Replace with your Repo Name
+BRANCH = "main"               
 GITHUB_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/{IMAGE_FILENAME}"
 
 # DATABASE
 DB_URL = "postgresql://neondb_owner:npg_rGV1neuthUa0@ep-orange-pine-ahlf4955-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
-# MAP CENTER (Calibrated to your SAR Image bounds)
-# Matches LAT_NORTH/SOUTH average from model.py
+# MAP CENTER (Alexandria)
 LAT_CENTER = 31.185 
 LON_CENTER = 29.870
 
@@ -62,12 +60,10 @@ LON_CENTER = 29.870
 def get_db_connection():
     try:
         return psycopg2.connect(DB_URL)
-    except Exception as e:
-        st.error(f"❌ DB Connection Error: {e}")
+    except:
         return None
 
 def load_authorized_ships():
-    """🟢 Returns the Legal Ships (AIS)"""
     conn = get_db_connection()
     if not conn: return pd.DataFrame()
     
@@ -83,7 +79,6 @@ def load_authorized_ships():
     except: return pd.DataFrame()
 
 def load_detected_ships():
-    """🔴 Returns the Detected Ships (Satellite)"""
     conn = get_db_connection()
     if not conn: return pd.DataFrame()
     try:
@@ -112,7 +107,6 @@ with tab1:
     df_legal = load_authorized_ships()
     df_detected = load_detected_ships()
     
-    # Metrics
     m1, m2, m3 = st.columns(3)
     m1.metric("Legal (AIS)", len(df_legal))
     m2.metric("Detected", len(df_detected))
@@ -125,7 +119,6 @@ with tab1:
 
     layers = []
     
-    # GREEN LAYER (Legal)
     if not df_legal.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
@@ -137,7 +130,6 @@ with tab1:
             radius_min_pixels=5
         ))
 
-    # RED LAYER (Detected)
     if not df_detected.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
@@ -149,13 +141,12 @@ with tab1:
             radius_min_pixels=5
         ))
 
-    # MAP RENDER (Centralized on Alexandria Port)
     st.pydeck_chart(pdk.Deck(
         map_style="mapbox://styles/mapbox/dark-v10",
         initial_view_state=pdk.ViewState(
             latitude=LAT_CENTER,
             longitude=LON_CENTER,
-            zoom=13, # Zoomed in to match the 2.5km satellite view
+            zoom=13,
             pitch=0
         ),
         layers=layers,
@@ -163,31 +154,22 @@ with tab1:
     ))
 
 # ==========================================
-# 6. TAB 2: SATELLITE FEED (With Fallback)
+# 6. TAB 2: SATELLITE FEED (Silent Fallback)
 # ==========================================
 with tab2:
     st.markdown("### 📷 Live Analysis")
     
-    # 1. Try Local File first (Best quality)
+    # 1. Try Local File first
     if os.path.exists(IMAGE_PATH):
-        mod_time = os.path.getmtime(IMAGE_PATH)
-        ts = datetime.fromtimestamp(mod_time).strftime('%H:%M:%S')
-        st.success(f"✅ Local Feed Active. Last Scan: {ts}")
-        
         image = Image.open(IMAGE_PATH)
         st.image(image, use_container_width=True)
         
-    # 2. Fallback to GitHub URL (If running on Cloud)
+    # 2. Fallback to GitHub URL (Silent)
     else:
-        st.warning("⚠️ Local feed not found. Fetching from Cloud Archive...")
         try:
-            # Streamlit can load images directly from URLs
-            st.image(GITHUB_URL, 
-                     caption=f"Source: GitHub Archive ({IMAGE_FILENAME})", 
-                     use_container_width=True)
-            st.info("💡 To update this image, push a new 'final_detection.jpg' to your GitHub repository.")
+            st.image(GITHUB_URL, use_container_width=True)
         except:
-            st.error("❌ No image found on Device or GitHub.")
+            st.error("❌ No Signal (Check GitHub Link)")
 
 # ==========================================
 # 7. TAB 3: RAW DATA
