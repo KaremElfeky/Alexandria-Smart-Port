@@ -20,15 +20,12 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
-    /* BIGGER TABS */
     div[data-baseweb="tab-list"] { gap: 8px; }
     div[data-baseweb="tab"] {
         flex-grow: 1; text-align: center; background-color: #1f2937;
         border-radius: 5px 5px 0px 0px; padding: 10px; font-weight: 600; font-size: 1.1rem;
     }
     div[aria-selected="true"] { background-color: #ff4b4b !important; color: white !important; }
-    
-    /* METRICS AT TOP */
     div[data-testid="stMetric"] {
         background-color: #262730; border-radius: 8px; padding: 10px;
         border-left: 5px solid #ff4b4b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
@@ -42,13 +39,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGE_FILENAME = 'final_detection.jpg'
 IMAGE_PATH = os.path.join(SCRIPT_DIR, IMAGE_FILENAME)
 DB_URL = "postgresql://neondb_owner:npg_rGV1neuthUa0@ep-orange-pine-ahlf4955-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-
-# --- ☁️ GITHUB SETTINGS ---
 GITHUB_USER = "YourUsername" 
 REPO_NAME = "YourRepoName"    
 GITHUB_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/main/{IMAGE_FILENAME}"
-
-# --- MAP CALIBRATION (ALEXANDRIA) ---
 LAT_CENTER = 31.185
 LON_CENTER = 29.870
 
@@ -83,28 +76,26 @@ with c2:
 
 st.divider()
 
-# --- LOAD DATA ---
-df_legal = load_data("authorized_ships")
-df_detected = load_data("detected_ships")
+# --- LOAD & FILTER DATA ---
+df_legal_ais = load_data("authorized_ships") # From AIS Table
+df_all_detected = load_data("detected_ships") # From Satellite
 
-# --- STRICT SECURITY LOGIC (FIXED) ---
-# If a ship is NOT explicitly "LEGAL SHIP", it is a THREAT.
-if not df_detected.empty:
-    if 'status' in df_detected.columns:
-        dark_count = len(df_detected[df_detected['status'] != 'LEGAL SHIP'])
-    else:
-        # If no status column exists yet, assume ALL are threats
-        dark_count = len(df_detected)
+# Separate the Good Guys from the Bad Guys
+# Logic: If status contains "LEGAL", it's Good. Everything else is Bad.
+if not df_all_detected.empty and 'status' in df_all_detected.columns:
+    df_green = df_all_detected[df_all_detected['status'].str.contains("LEGAL", case=False, na=False)]
+    df_red   = df_all_detected[~df_all_detected['status'].str.contains("LEGAL", case=False, na=False)]
 else:
-    dark_count = 0
+    df_green = pd.DataFrame()
+    df_red   = df_all_detected # Assume all bad if no status
 
-# --- METRICS ROW ---
+# --- METRICS ---
 m1, m2, m3 = st.columns(3)
-m1.metric("🟢 Authorized (AIS)", len(df_legal))
-m2.metric("🔴 Detected (Sat)", len(df_detected))
+m1.metric("🟢 Authorized (AIS)", len(df_legal_ais))
+m2.metric("🔵 Verified Matches", len(df_green)) # Matches found by Sat
 
-if dark_count > 0:
-    m3.metric("⚠️ Dark Ships", dark_count, delta="THREAT DETECTED", delta_color="inverse")
+if len(df_red) > 0:
+    m3.metric("⚠️ Dark Ships", len(df_red), delta="THREAT DETECTED", delta_color="inverse")
 else:
     m3.metric("Status", "SECURE", delta="ALL CLEAR")
 
@@ -115,43 +106,42 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["🗺️ TACTICAL MAP", "📷 SAT FEED", "📊 RAW DATA"])
 
-# --- TAB 1: THE MAP ---
 with tab1:
     layers = []
 
-    # Layer 1: Green Ships (AIS)
-    if not df_legal.empty:
+    # 1. AIS Data (Hollow Circles or Small Dots)
+    if not df_legal_ais.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
-            data=df_legal,
+            data=df_legal_ais,
             get_position="[lon, lat]",
-            get_color="[0, 255, 0, 200]",
-            get_radius=120,
+            get_color="[0, 255, 0, 100]", # Transparent Green
+            get_radius=200,
             pickable=True,
-            radius_min_pixels=5
         ))
 
-    # Layer 2: Red/Green Detected Ships (Sat)
-    if not df_detected.empty:
-        # Color Logic: Green ONLY if Legal. Everything else is Red.
-        if 'status' in df_detected.columns:
-            df_detected['color'] = df_detected['status'].apply(
-                lambda x: [0, 255, 0, 200] if x == 'LEGAL SHIP' else [255, 0, 0, 200]
-            )
-        else:
-            df_detected['color'] = [[255, 0, 0, 200]] * len(df_detected)
-
+    # 2. Verified Satellite Matches (Solid Green)
+    if not df_green.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
-            data=df_detected,
+            data=df_green,
             get_position="[lon, lat]",
-            get_color="color",
+            get_color="[0, 255, 0, 255]", # Bright Green
             get_radius=120,
             pickable=True,
-            radius_min_pixels=5
         ))
 
-    # RENDER MAP
+    # 3. DARK SHIPS (Solid Red) - This is the Layer you want!
+    if not df_red.empty:
+        layers.append(pdk.Layer(
+            "ScatterplotLayer",
+            data=df_red,
+            get_position="[lon, lat]",
+            get_color="[255, 0, 0, 255]", # Bright Red
+            get_radius=120,
+            pickable=True,
+        ))
+
     st.pydeck_chart(pdk.Deck(
         map_style="mapbox://styles/mapbox/dark-v10",
         initial_view_state=pdk.ViewState(
@@ -161,10 +151,9 @@ with tab1:
             pitch=0
         ),
         layers=layers,
-        tooltip={"html": "<b>{status}</b><br/>Lat: {lat}<br/>Lon: {lon}"}
+        tooltip={"html": "<b>STATUS: {status}</b><br/>Lat: {lat}<br/>Lon: {lon}"}
     ))
 
-# --- TAB 2: SAT FEED ---
 with tab2:
     if os.path.exists(IMAGE_PATH):
         st.image(Image.open(IMAGE_PATH), use_container_width=True)
@@ -172,12 +161,11 @@ with tab2:
         try: st.image(GITHUB_URL, use_container_width=True)
         except: st.warning("No Satellite Feed Available")
 
-# --- TAB 3: DATA ---
 with tab3:
     c_a, c_b = st.columns(2)
     with c_a:
-        st.caption("🟢 AUTHORIZED VESSELS (AIS)")
-        st.dataframe(df_legal, use_container_width=True)
+        st.caption("🟢 VERIFIED LEGAL (SAT MATCHED)")
+        st.dataframe(df_green, use_container_width=True)
     with c_b:
-        st.caption("🔴 DETECTED TARGETS (SAT)")
-        st.dataframe(df_detected, use_container_width=True)
+        st.caption("🔴 DARK SHIPS (UNIDENTIFIED)")
+        st.dataframe(df_red, use_container_width=True)
