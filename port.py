@@ -66,17 +66,15 @@ def load_data(table_name):
         df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
         conn.close()
         df.columns = df.columns.str.lower()
-        # Fix Column Names
         if 'latitude' in df.columns: df.rename(columns={'latitude': 'lat'}, inplace=True)
         if 'longitude' in df.columns: df.rename(columns={'longitude': 'lon'}, inplace=True)
-        # Force Numbers (Critical for Map)
         df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
         df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
         return df.dropna(subset=['lat', 'lon'])
     except: return pd.DataFrame()
 
 # ==========================================
-# 3. HEADER & METRICS (NOW AT THE TOP)
+# 3. HEADER & METRICS
 # ==========================================
 c1, c2 = st.columns([3, 1])
 with c1: st.title("⚓ Port Command")
@@ -89,15 +87,18 @@ st.divider()
 df_legal = load_data("authorized_ships")
 df_detected = load_data("detected_ships")
 
-# --- CALCULATE DARK SHIPS ---
-# We count how many ships in 'detected_ships' are marked as 'DARK SHIP'
-if 'status' in df_detected.columns:
-    dark_count = len(df_detected[df_detected['status'] == 'DARK SHIP'])
+# --- STRICT SECURITY LOGIC (FIXED) ---
+# If a ship is NOT explicitly "LEGAL SHIP", it is a THREAT.
+if not df_detected.empty:
+    if 'status' in df_detected.columns:
+        dark_count = len(df_detected[df_detected['status'] != 'LEGAL SHIP'])
+    else:
+        # If no status column exists yet, assume ALL are threats
+        dark_count = len(df_detected)
 else:
-    # Fallback if column missing
-    dark_count = 0 
+    dark_count = 0
 
-# --- METRICS ROW (MOVED UP HERE) ---
+# --- METRICS ROW ---
 m1, m2, m3 = st.columns(3)
 m1.metric("🟢 Authorized (AIS)", len(df_legal))
 m2.metric("🔴 Detected (Sat)", len(df_detected))
@@ -107,7 +108,7 @@ if dark_count > 0:
 else:
     m3.metric("Status", "SECURE", delta="ALL CLEAR")
 
-st.markdown("<br>", unsafe_allow_html=True) # Spacer
+st.markdown("<br>", unsafe_allow_html=True) 
 
 # ==========================================
 # 4. TABS & MAP
@@ -132,7 +133,7 @@ with tab1:
 
     # Layer 2: Red/Green Detected Ships (Sat)
     if not df_detected.empty:
-        # Color logic: Green if matched, Red if Dark
+        # Color Logic: Green ONLY if Legal. Everything else is Red.
         if 'status' in df_detected.columns:
             df_detected['color'] = df_detected['status'].apply(
                 lambda x: [0, 255, 0, 200] if x == 'LEGAL SHIP' else [255, 0, 0, 200]
@@ -150,7 +151,7 @@ with tab1:
             radius_min_pixels=5
         ))
 
-    # RENDER MAP (This will show even if layers are empty)
+    # RENDER MAP
     st.pydeck_chart(pdk.Deck(
         map_style="mapbox://styles/mapbox/dark-v10",
         initial_view_state=pdk.ViewState(
