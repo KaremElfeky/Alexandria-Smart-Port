@@ -14,53 +14,50 @@ st.set_page_config(
     page_title="Alexandria Port Command", 
     page_icon="⚓", 
     layout="wide",
-    initial_sidebar_state="collapsed" # Hides sidebar by default on mobile
+    initial_sidebar_state="collapsed"
 )
 
 # Professional Mobile-First CSS
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
-    
-    /* Bigger Tabs for easy tapping on phone */
-    div[data-baseweb="tab-list"] {
-        gap: 8px;
-    }
+    div[data-baseweb="tab-list"] { gap: 8px; }
     div[data-baseweb="tab"] {
-        flex-grow: 1; /* Tabs stretch to fill screen width */
-        text-align: center;
-        background-color: #1f2937;
-        border-radius: 5px 5px 0px 0px;
-        padding: 10px;
-        font-weight: 600;
+        flex-grow: 1; text-align: center; background-color: #1f2937;
+        border-radius: 5px 5px 0px 0px; padding: 10px; font-weight: 600;
     }
-    div[aria-selected="true"] {
-        background-color: #ff4b4b !important;
-        color: white !important;
-    }
-    
-    /* Metrics Styling */
+    div[aria-selected="true"] { background-color: #ff4b4b !important; color: white !important; }
     div[data-testid="stMetric"] {
-        background-color: #262730;
-        border-radius: 8px;
-        padding: 15px;
-        border-left: 5px solid #ff4b4b;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        background-color: #262730; border-radius: 8px; padding: 15px;
+        border-left: 5px solid #ff4b4b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     </style>
     """, unsafe_allow_html=True)
 
-# CONFIG
+# ==========================================
+# 2. CONFIGURATION (CRITICAL UPDATES)
+# ==========================================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-IMAGE_PATH = os.path.join(SCRIPT_DIR, 'final_detection.jpg')
+IMAGE_FILENAME = 'final_detection.jpg'
+IMAGE_PATH = os.path.join(SCRIPT_DIR, IMAGE_FILENAME)
+
+# --- ☁️ GITHUB FALLBACK SETTINGS ---
+# Replace these with your actual details to make the cloud image work!
+GITHUB_USER = "YourUsername"  # e.g., 'karem-alex-port'
+REPO_NAME = "YourRepoName"    # e.g., 'alexandria-smart-port'
+BRANCH = "main"               # Usually 'main' or 'master'
+GITHUB_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/{IMAGE_FILENAME}"
+
+# DATABASE
 DB_URL = "postgresql://neondb_owner:npg_rGV1neuthUa0@ep-orange-pine-ahlf4955-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
-# MAP CENTER
-LAT_CENTER = 31.185
+# MAP CENTER (Calibrated to your SAR Image bounds)
+# Matches LAT_NORTH/SOUTH average from model.py
+LAT_CENTER = 31.185 
 LON_CENTER = 29.870
 
 # ==========================================
-# 2. DATABASE FUNCTIONS
+# 3. DATABASE FUNCTIONS
 # ==========================================
 def get_db_connection():
     try:
@@ -77,71 +74,58 @@ def load_authorized_ships():
     try:
         df = pd.read_sql("SELECT * FROM authorized_ships", conn)
         conn.close()
-        
-        # Cleanup
         df.columns = df.columns.str.lower()
         if 'latitude' in df.columns: df.rename(columns={'latitude': 'lat'}, inplace=True)
         if 'longitude' in df.columns: df.rename(columns={'longitude': 'lon'}, inplace=True)
         df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
         df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
         return df.dropna(subset=['lat', 'lon'])
-    except Exception as e:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def load_detected_ships():
     """🔴 Returns the Detected Ships (Satellite)"""
     conn = get_db_connection()
     if not conn: return pd.DataFrame()
-    
     try:
         df = pd.read_sql("SELECT * FROM detected_ships", conn)
+        conn.close()
+        return df
     except:
         conn.close()
-        return pd.DataFrame() 
-        
-    conn.close()
-    return df
+        return pd.DataFrame()
 
 # ==========================================
-# 3. HEADER & STATUS BAR
+# 4. HEADER & NAVIGATION
 # ==========================================
-# This row stays visible at the top
 c1, c2 = st.columns([3, 1])
-with c1:
-    st.title("⚓ Port Command")
-with c2:
-    if st.button("🔄 REFRESH", type="primary", use_container_width=True):
-        st.rerun()
+with c1: st.title("⚓ Port Command")
+with c2: 
+    if st.button("🔄 REFRESH", type="primary", use_container_width=True): st.rerun()
 
-# ==========================================
-# 4. MAIN NAVIGATION (TABS)
-# ==========================================
-# Tabs are better than Sidebar for mobile
 tab1, tab2, tab3 = st.tabs(["🗺️ MAP", "📷 SAT FEED", "📊 DATA"])
 
-# --- TAB 1: LIVE MAP ---
+# ==========================================
+# 5. TAB 1: LIVE MAP
+# ==========================================
 with tab1:
     st.markdown("### 🛰️ Tactical Situation")
-    
-    # Load Data
     df_legal = load_authorized_ships()
     df_detected = load_detected_ships()
     
-    # Smart Metrics Layout
+    # Metrics
     m1, m2, m3 = st.columns(3)
     m1.metric("Legal (AIS)", len(df_legal))
     m2.metric("Detected", len(df_detected))
-    
     diff = len(df_detected) - len(df_legal)
+    
     if diff > 0:
         m3.metric("⚠️ Dark Ships", diff, delta="ALERT", delta_color="inverse")
     else:
         m3.metric("Status", "SECURE", delta="OK")
 
-    # MAP LAYERS
     layers = []
-
-    # Layer 1: Green (Legal)
+    
+    # GREEN LAYER (Legal)
     if not df_legal.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
@@ -153,7 +137,7 @@ with tab1:
             radius_min_pixels=5
         ))
 
-    # Layer 2: Red (Detected)
+    # RED LAYER (Detected)
     if not df_detected.empty:
         layers.append(pdk.Layer(
             "ScatterplotLayer",
@@ -165,40 +149,53 @@ with tab1:
             radius_min_pixels=5
         ))
 
+    # MAP RENDER (Centralized on Alexandria Port)
     st.pydeck_chart(pdk.Deck(
         map_style="mapbox://styles/mapbox/dark-v10",
         initial_view_state=pdk.ViewState(
             latitude=LAT_CENTER,
             longitude=LON_CENTER,
-            zoom=12.5,
+            zoom=13, # Zoomed in to match the 2.5km satellite view
             pitch=0
         ),
         layers=layers,
-        tooltip={"html": "<b>Target Detected</b><br/>Lat: {lat}<br/>Lon: {lon}"}
+        tooltip={"html": "<b>Target</b><br/>Lat: {lat}<br/>Lon: {lon}"}
     ))
 
-# --- TAB 2: SATELLITE FEED ---
+# ==========================================
+# 6. TAB 2: SATELLITE FEED (With Fallback)
+# ==========================================
 with tab2:
     st.markdown("### 📷 Live Analysis")
     
+    # 1. Try Local File first (Best quality)
     if os.path.exists(IMAGE_PATH):
         mod_time = os.path.getmtime(IMAGE_PATH)
         ts = datetime.fromtimestamp(mod_time).strftime('%H:%M:%S')
-        st.info(f"Last Satellite Pass: {ts}")
+        st.success(f"✅ Local Feed Active. Last Scan: {ts}")
         
         image = Image.open(IMAGE_PATH)
         st.image(image, use_container_width=True)
+        
+    # 2. Fallback to GitHub URL (If running on Cloud)
     else:
-        st.warning("No Satellite Feed Available. Run 'model.py'.")
+        st.warning("⚠️ Local feed not found. Fetching from Cloud Archive...")
+        try:
+            # Streamlit can load images directly from URLs
+            st.image(GITHUB_URL, 
+                     caption=f"Source: GitHub Archive ({IMAGE_FILENAME})", 
+                     use_container_width=True)
+            st.info("💡 To update this image, push a new 'final_detection.jpg' to your GitHub repository.")
+        except:
+            st.error("❌ No image found on Device or GitHub.")
 
-# --- TAB 3: RAW DATA ---
+# ==========================================
+# 7. TAB 3: RAW DATA
+# ==========================================
 with tab3:
     st.markdown("### 📂 Intelligence Logs")
-    
     st.caption("🟢 AUTHORIZED VESSELS (AIS)")
     st.dataframe(load_authorized_ships(), use_container_width=True)
-    
     st.divider()
-    
     st.caption("🔴 DETECTED TARGETS (YOLOv8)")
     st.dataframe(load_detected_ships(), use_container_width=True)
